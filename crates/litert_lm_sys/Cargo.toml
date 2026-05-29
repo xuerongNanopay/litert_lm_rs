@@ -9,4 +9,4 @@ name = "litert_lm_sys"
 path = "src/lib.rs"
 
 [build-dependencies]
-bindgen = { version = "0.72", default-features = false }
+bindgen = { version = "0.72", default-features = false, features = ["runtime"] }
