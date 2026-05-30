@@ -101,6 +101,9 @@ dependencies = [
 [[package]]
 name = "litert_lm_rs"
 version = "0.1.0"
+dependencies = [
+ "litert_lm_sys",
+]
 
 [[package]]
 name = "litert_lm_sys"

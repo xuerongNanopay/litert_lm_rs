@@ -8,3 +8,4 @@ members = ["crates/*"]
 resolver = "3"
 
 [dependencies]
+litert_lm_sys = { path = "crates/litert_lm_sys" }
