@@ -35,7 +35,7 @@ fn update_submodules() {
 }
 
 fn main() {
-    println!("cargo:rerun-if-changed={ENGINE_HEADER}");
+    println!("cargo:rerun-if-changed=build.rs");
 
     if !Path::new("LiteRT-LM/LICENSE").exists() {
         update_submodules()
