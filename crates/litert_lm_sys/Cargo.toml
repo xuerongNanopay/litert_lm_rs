@@ -3,6 +3,7 @@ name = "litert_lm_sys"
 version = "0.1.0"
 edition = "2024"
 build = "build.rs"
+links = "litert_lm"
 
 [lib]
 name = "litert_lm_sys"

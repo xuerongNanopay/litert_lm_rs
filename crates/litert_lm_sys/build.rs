@@ -32,6 +32,7 @@ fn main() {
     }
 
     generate_bindings();
+    compile_litert_lm();
 }
 
 fn generate_bindings() {
@@ -55,4 +56,23 @@ fn generate_bindings() {
     bindings
         .write_to_file(bindings_path)
         .expect("failed to write LiteRT-LM bindings");
+}
+
+fn compile_litert_lm() {
+    let status = Command::new("bazelisk")
+        .current_dir("LiteRT-LM")
+        .args([
+            "build",
+            "--linkopt=-Wl,-install_name,@rpath/liblitert-lm.dylib",
+            "//python/litert_lm:litert-lm",
+        ])
+        .status()
+        .expect("failed to run bazelisk");
+
+    if !status.success() {
+        panic!("bazelisk build failed with status {status}");
+    }
+
+    println!("cargo:rustc-link-search=native=LiteRT-LM/bazel-bin/python/litert_lm");
+    println!("cargo:rustc-link-lib=dylib=litert-lm");
 }
