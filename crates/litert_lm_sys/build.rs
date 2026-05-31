@@ -5,6 +5,15 @@ use std::process::Command;
 
 const ENGINE_HEADER: &str = "LiteRT-LM/c/engine.h";
 
+struct Platform {
+    bazel_config: Option<&'static str>,
+    main_library: &'static str,
+    prebuilt_dir: &'static str,
+    dependency_extensions: &'static [&'static str],
+    install_name: Option<&'static str>,
+    use_rpath: bool,
+}
+
 fn update_submodules() {
     let program = "git";
     let dir = "../";
@@ -60,23 +69,29 @@ fn generate_bindings() {
 }
 
 fn compile_litert_lm() {
+    let platform = platform();
     let status = Command::new("bazelisk")
         .current_dir("LiteRT-LM")
         .args(["clean"])
         .status()
-        .expect("failed to run bazelisk clean --expunge");
+        .expect("failed to run bazelisk clean");
 
     if !status.success() {
-        panic!("bazelisk clean --expunge failed with status {status}");
+        panic!("bazelisk clean failed with status {status}");
     }
+
+    let mut args = vec!["build".to_owned()];
+    if let Some(config) = platform.bazel_config {
+        args.push(format!("--config={config}"));
+    }
+    if let Some(install_name) = platform.install_name {
+        args.push(format!("--linkopt=-Wl,-install_name,{install_name}"));
+    }
+    args.push("//python/litert_lm:litert-lm".to_owned());
 
     let status = Command::new("bazelisk")
         .current_dir("LiteRT-LM")
-        .args([
-            "build",
-            "--linkopt=-Wl,-install_name,@rpath/liblitert-lm.dylib",
-            "//python/litert_lm:litert-lm",
-        ])
+        .args(args)
         .status()
         .expect("failed to run bazelisk");
 
@@ -86,48 +101,92 @@ fn compile_litert_lm() {
 
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set by Cargo"));
     let lib_dir = out_dir.join("lib");
-    let output_lib = lib_dir.join("liblitert-lm.dylib");
+    let output_lib = lib_dir.join(platform.main_library);
 
     fs::create_dir_all(&lib_dir).expect("failed to create native library output directory");
-    if output_lib.exists() {
-        fs::remove_file(&output_lib).expect("failed to remove previous liblitert-lm.dylib");
-    }
+    copy_file(
+        &Path::new("LiteRT-LM/bazel-bin/python/litert_lm").join(platform.main_library),
+        &output_lib,
+    );
 
-    fs::copy(
-        "LiteRT-LM/bazel-bin/python/litert_lm/liblitert-lm.dylib",
-        output_lib,
-    )
-    .expect("failed to copy liblitert-lm.dylib");
-
-    copy_macos_dependencies(&lib_dir);
+    copy_dependencies(&platform, &lib_dir);
 
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=dylib=litert-lm");
-    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
+    if platform.use_rpath {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
+    }
 }
 
-fn copy_macos_dependencies(lib_dir: &Path) {
-    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
-        return;
-    }
-
-    let dependencies_dir = Path::new("LiteRT-LM/prebuilt/macos_arm64");
+fn copy_dependencies(platform: &Platform, lib_dir: &Path) {
+    let dependencies_dir = Path::new("LiteRT-LM/prebuilt").join(platform.prebuilt_dir);
     let dependencies =
-        fs::read_dir(dependencies_dir).expect("failed to read macOS dependencies directory");
+        fs::read_dir(dependencies_dir).expect("failed to read native dependencies directory");
 
     for dependency in dependencies {
-        let dependency = dependency.expect("failed to read macOS dependency");
+        let dependency = dependency.expect("failed to read native dependency");
         let source = dependency.path();
+        let extension = source.extension().and_then(|extension| extension.to_str());
 
-        if source.extension().and_then(|extension| extension.to_str()) != Some("dylib") {
+        if !platform
+            .dependency_extensions
+            .iter()
+            .any(|item| Some(*item) == extension)
+        {
             continue;
         }
 
         let output = lib_dir.join(dependency.file_name());
-        if output.exists() {
-            fs::remove_file(&output).expect("failed to remove previous macOS dependency");
-        }
+        copy_file(&source, &output);
+    }
+}
 
-        fs::copy(&source, output).expect("failed to copy macOS dependency");
+fn copy_file(source: &Path, output: &Path) {
+    if output.exists() {
+        fs::remove_file(output).expect("failed to remove previous native library");
+    }
+
+    fs::copy(source, output).expect("failed to copy native library");
+}
+
+fn platform() -> Platform {
+    let target_os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS is set by Cargo");
+    let target_arch =
+        env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH is set by Cargo");
+
+    match (target_os.as_str(), target_arch.as_str()) {
+        ("macos", "aarch64") => Platform {
+            bazel_config: Some("macos_arm64"),
+            main_library: "liblitert-lm.dylib",
+            prebuilt_dir: "macos_arm64",
+            dependency_extensions: &["dylib"],
+            install_name: Some("@rpath/liblitert-lm.dylib"),
+            use_rpath: true,
+        },
+        ("linux", "x86_64") => Platform {
+            bazel_config: None,
+            main_library: "liblitert-lm.so",
+            prebuilt_dir: "linux_x86_64",
+            dependency_extensions: &["so"],
+            install_name: None,
+            use_rpath: true,
+        },
+        ("linux", "aarch64") => Platform {
+            bazel_config: None,
+            main_library: "liblitert-lm.so",
+            prebuilt_dir: "linux_arm64",
+            dependency_extensions: &["so"],
+            install_name: None,
+            use_rpath: true,
+        },
+        ("windows", "x86_64") => Platform {
+            bazel_config: Some("windows"),
+            main_library: "litert-lm.dll",
+            prebuilt_dir: "windows_x86_64",
+            dependency_extensions: &["dll", "lib"],
+            install_name: None,
+            use_rpath: false,
+        },
+        _ => panic!("unsupported target: {target_arch}-{target_os}"),
     }
 }
