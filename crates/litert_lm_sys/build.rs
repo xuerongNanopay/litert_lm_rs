@@ -99,7 +99,35 @@ fn compile_litert_lm() {
     )
     .expect("failed to copy liblitert-lm.dylib");
 
+    copy_macos_dependencies(&lib_dir);
+
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=dylib=litert-lm");
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
+}
+
+fn copy_macos_dependencies(lib_dir: &Path) {
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
+        return;
+    }
+
+    let dependencies_dir = Path::new("LiteRT-LM/prebuilt/macos_arm64");
+    let dependencies =
+        fs::read_dir(dependencies_dir).expect("failed to read macOS dependencies directory");
+
+    for dependency in dependencies {
+        let dependency = dependency.expect("failed to read macOS dependency");
+        let source = dependency.path();
+
+        if source.extension().and_then(|extension| extension.to_str()) != Some("dylib") {
+            continue;
+        }
+
+        let output = lib_dir.join(dependency.file_name());
+        if output.exists() {
+            fs::remove_file(&output).expect("failed to remove previous macOS dependency");
+        }
+
+        fs::copy(&source, output).expect("failed to copy macOS dependency");
+    }
 }
