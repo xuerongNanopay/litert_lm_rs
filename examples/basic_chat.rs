@@ -8,6 +8,7 @@ fn main() {
 
     let model_path = CString::new(model_path).expect("model path must not contain NUL bytes");
     let backend = CString::new("cpu").expect("backend must not contain NUL bytes");
+    // Disable cache use: :nocache
     let cache_dir =
         CString::new("/tmp/litert-lm-cache/").expect("cache directory must not contain NUL bytes");
 
