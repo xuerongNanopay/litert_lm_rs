@@ -62,6 +62,16 @@ fn generate_bindings() {
 fn compile_litert_lm() {
     let status = Command::new("bazelisk")
         .current_dir("LiteRT-LM")
+        .args(["clean"])
+        .status()
+        .expect("failed to run bazelisk clean --expunge");
+
+    if !status.success() {
+        panic!("bazelisk clean --expunge failed with status {status}");
+    }
+
+    let status = Command::new("bazelisk")
+        .current_dir("LiteRT-LM")
         .args([
             "build",
             "--linkopt=-Wl,-install_name,@rpath/liblitert-lm.dylib",
@@ -76,11 +86,16 @@ fn compile_litert_lm() {
 
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set by Cargo"));
     let lib_dir = out_dir.join("lib");
+    let output_lib = lib_dir.join("liblitert-lm.dylib");
 
     fs::create_dir_all(&lib_dir).expect("failed to create native library output directory");
+    if output_lib.exists() {
+        fs::remove_file(&output_lib).expect("failed to remove previous liblitert-lm.dylib");
+    }
+
     fs::copy(
         "LiteRT-LM/bazel-bin/python/litert_lm/liblitert-lm.dylib",
-        lib_dir.join("liblitert-lm.dylib"),
+        output_lib,
     )
     .expect("failed to copy liblitert-lm.dylib");
 
