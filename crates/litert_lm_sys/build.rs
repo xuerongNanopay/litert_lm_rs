@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -73,6 +74,17 @@ fn compile_litert_lm() {
         panic!("bazelisk build failed with status {status}");
     }
 
-    println!("cargo:rustc-link-search=native=LiteRT-LM/bazel-bin/python/litert_lm");
+    let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set by Cargo"));
+    let lib_dir = out_dir.join("lib");
+
+    fs::create_dir_all(&lib_dir).expect("failed to create native library output directory");
+    fs::copy(
+        "LiteRT-LM/bazel-bin/python/litert_lm/liblitert-lm.dylib",
+        lib_dir.join("liblitert-lm.dylib"),
+    )
+    .expect("failed to copy liblitert-lm.dylib");
+
+    println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=dylib=litert-lm");
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
 }
